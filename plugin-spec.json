@@ -1,0 +1,12 @@
+{
+  "id": "service.speech-recognition",
+  "name": "语音识别服务",
+  "version": "0.8.0",
+  "versionCode": 9,
+  "entryClass": "com.kigtts.engines.recognitionservice.RecognitionServicePlugin",
+  "apiVersion": 9,
+  "minSdk": 26,
+  "runtime": "android-dex",
+  "license": "MIT",
+  "capabilities": ["asr-service", "asr-batch", "asr-segmented", "asr-incremental", "ui", "resources"]
+}
