@@ -8,6 +8,8 @@ internal class RecognitionServiceSettings(storage: PluginStorage) {
     private val file = storage.file("config/recognition-service.json").also { storage.configuration }
     private val json = runCatching { JSONObject(file.readText()) }.getOrDefault(JSONObject())
     var provider: String? = json.optString("provider").takeIf { it.isNotBlank() }
+    var resident = json.optBoolean("resident", false)
+    var idleSeconds = json.optInt("idleSeconds", 30).coerceIn(5, 120)
     var voiceInput = json.optBoolean("voiceInput", true)
     var continuousInput = json.optBoolean("continuousInput", false)
     var captionOutput = runCatching { CaptionOutput.valueOf(json.optString("captionOutput", "PANEL")) }.getOrDefault(CaptionOutput.PANEL)
@@ -25,5 +27,6 @@ internal class RecognitionServiceSettings(storage: PluginStorage) {
     fun reorder(proposed: List<String>, providers: List<AsrProvider>) { ItemOrder.validate(proposed, providers.map { it.pluginId }); order = proposed; save() }
     fun save() { file.writeText(JSONObject().put("provider", provider).put("order", JSONArray(order))
         .put("voiceInput", voiceInput).put("continuousInput", continuousInput)
+        .put("resident", resident).put("idleSeconds", idleSeconds)
         .put("captionOutput", captionOutput.name).toString(), Charsets.UTF_8) }
 }

@@ -44,20 +44,20 @@ class RecognitionServiceTest {
             override suspend fun download(url: String, relativePath: String, sha256: String?): File = error("Service never downloads models")
         })
     }
-    @Test fun settingsPageKeepsEnableSelectionAndProviderPagesWithoutDuplicatingEngineStatus() = runBlocking {
+    @Test fun enginePickerIsSelectionOnlyAndConfigurationLivesInService() = runBlocking {
         val broker = Broker(); val plugin = plugin(broker)
-        val page = plugin.page("engine/test.online", PluginContext("", ""))!!
-        assertTrue(page.blocks.isEmpty())
-        val items = page.management!!.items
-        assertEquals(ManagementToggle(true, "toggle/test.online"), items.first().toggle)
-        assertTrue(items[1].selected)
-        assertEquals("settings/test.online/packs", items.last().primaryAction)
+        val picker = plugin.page("engines", PluginContext("", ""))!!
+        assertTrue(picker.blocks.isEmpty())
+        assertNull(picker.management!!.reorderAction)
+        assertTrue(picker.management!!.items.all { it.selection != null && it.toggle == null && it.actions.isEmpty() })
+        assertEquals("select/test.online", picker.management!!.items.first { it.selected }.primaryAction)
         val manager = plugin.page("manager", PluginContext("", "", recognitionServiceId = plugin.descriptor.id))!!
-        assertEquals(listOf("聆听字幕", "语音输入"), manager.blocks.filterIsInstance<PageBlock.Group>().map { it.title })
-        assertFalse(manager.blocks.any { it is PageBlock.Actions })
-        broker.catalog = broker.catalog.map { if (it.pluginId == "test.online") it.copy(enabled = false) else it }
-        val disabled = plugin.page("engine/test.online", PluginContext("", ""))!!.management!!.items
-        assertEquals(2, disabled.size); assertFalse(disabled.first().toggle!!.checked)
+        val groups = manager.blocks.filterIsInstance<PageBlock.Group>()
+        assertEquals(listOf("识别", "聆听字幕", "语音输入", "加载方式", "引擎设置"), groups.map { it.title })
+        assertNull(manager.management)
+        assertEquals(PluginOutcome.OpenPage("engines"), plugin.execute("engines", PluginContext("", "")))
+        val slider = groups.first { it.title == "加载方式" }.children.filterIsInstance<PageBlock.Slider>().single().control
+        assertEquals(5f, slider.min); assertEquals(120f, slider.max)
     }
     @Test fun serviceAccumulatesTranscriptAndRoutesBatchToSeparateProvider() = runBlocking {
         val broker = Broker(); val plugin = plugin(broker)
@@ -89,10 +89,10 @@ class RecognitionServiceTest {
         broker.hold = false; assertTrue(plugin.asr.recognize(PcmAudio(byteArrayOf(1, 0))).text.startsWith("test.segmented"))
     }
     @Test fun managerOrdersEnginesAndOpensTheProvidersOwnModelPage() = runBlocking<Unit> {
-        val broker = Broker(); val plugin = plugin(broker); val page = plugin.page("manager", PluginContext("", ""))!!.management!!
+        val broker = Broker(); val plugin = plugin(broker); val page = plugin.page("engines", PluginContext("", ""))!!.management!!
         val ids = page.items.map { it.id }.reversed()
         plugin.execute("reorder", PluginContext("", "", inputs = mapOf("order" to PluginJson.encodeToString(ids))))
-        assertEquals(ids, plugin(broker).page("manager", PluginContext("", ""))!!.management!!.items.map { it.id })
+        assertEquals(ids, plugin(broker).page("engines", PluginContext("", ""))!!.management!!.items.map { it.id })
         assertEquals(PluginOutcome.OpenPluginPage("test.online", "packs"), plugin.execute("settings/test.online/packs", PluginContext("", "")))
         assertEquals(PluginOutcome.SetPluginEnabled("test.online", false), plugin.execute("toggle/test.online", PluginContext("", "")))
         assertEquals(PluginOutcome.SelectRecognitionService("service.speech-recognition"), plugin.execute("activate", PluginContext("", "")))
@@ -180,5 +180,18 @@ class RecognitionServiceTest {
             .onEach { seen += it }.first { it is RecognitionEvent.Transcript }
         assertTrue(broker.cancelled)
         assertTrue(seen.filterIsInstance<RecognitionEvent.Transcript>().none { it.finalized != null })
+    }
+    @Test fun idleRetentionAcceptsEndpointsPersistsAndRejectsOutOfRange() = runBlocking {
+        val broker = Broker(); val plugin = plugin(broker)
+        for (seconds in listOf(5, 120)) {
+            plugin.execute("idle-seconds", PluginContext("", "", inputs = mapOf("value" to seconds.toString())))
+            val groups = plugin(broker).page("manager", PluginContext("", ""))!!.blocks.filterIsInstance<PageBlock.Group>()
+            val slider = groups.single { it.title == "加载方式" }.children.filterIsInstance<PageBlock.Slider>().single().control
+            assertEquals(seconds.toFloat(), slider.value)
+        }
+        for (value in listOf("4", "121", "NaN")) {
+            assertTrue(runCatching { plugin.execute("idle-seconds", PluginContext("", "", inputs = mapOf("value" to value))) }.isFailure)
+        }
+        plugin.close()
     }
 }

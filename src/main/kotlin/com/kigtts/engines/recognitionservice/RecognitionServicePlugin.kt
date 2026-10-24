@@ -3,7 +3,7 @@ package com.kigtts.engines.recognitionservice
 import com.kigtts.plugin.api.*
 
 class RecognitionServicePlugin : KigPlugin {
-    override val descriptor = PluginDescriptor("service.speech-recognition", "语音识别服务", "聆听字幕、语音输入与识别包", version = "0.8.0")
+    override val descriptor = PluginDescriptor("service.speech-recognition", "语音识别服务", "聆听字幕、语音输入与识别包", version = "0.8.1")
     private lateinit var settings: RecognitionServiceSettings
     private lateinit var broker: RecognitionBroker
     private lateinit var facade: ServiceRecognition
@@ -18,6 +18,7 @@ class RecognitionServicePlugin : KigPlugin {
     override val contributions get() = contributions(PluginContext("", ""))
     override fun contributions(context: PluginContext): PluginContributions {
         val selected = context.recognitionServiceId == null || context.recognitionServiceId == descriptor.id
+        facade.updateActive(selected)
         return PluginContributions(settingsEntries = listOf(entry), automationActions = listOf("listen", "close", "input", "continuous"), actions = if (selected) listOf(
             UiAction("listen", if (captionSession(context)) "关闭聆听" else "开始聆听", UiSlot.EDITOR_TOP_START,
                 PluginIcon.HEARING, buttonStyle = UiButtonStyle.ICON_TEXT),
@@ -44,9 +45,19 @@ class RecognitionServicePlugin : KigPlugin {
             "continuous-input" -> { settings.continuousInput = !settings.continuousInput; settings.save(); PluginOutcome.RefreshUi }
             "output" -> { settings.captionOutput = CaptionOutput.valueOf(requireNotNull(id)); settings.save(); PluginOutcome.RefreshUi }
             "activate" -> PluginOutcome.SelectRecognitionService(descriptor.id)
-            "engine" -> PluginOutcome.OpenPage(actionId)
+            "engines" -> PluginOutcome.OpenPage("engines")
+            "resident" -> {
+                settings.resident = context.inputs["checked"]?.toBooleanStrictOrNull() ?: !settings.resident
+                settings.save(); facade.settingsChanged(); PluginOutcome.RefreshUi
+            }
+            "idle-seconds" -> {
+                val value = context.inputs["value"]?.toFloatOrNull()
+                require(value != null && value.isFinite() && value in 5f..120f)
+                settings.idleSeconds = kotlin.math.round(value).toInt(); settings.save()
+                facade.settingsChanged(); PluginOutcome.NoAction
+            }
             "select" -> {
-                val selected = provider(); settings.provider = selected.pluginId; settings.save()
+                val selected = provider(); settings.provider = selected.pluginId; settings.save(); facade.settingsChanged()
                 if (!selected.enabled) PluginOutcome.SetPluginEnabled(selected.pluginId, true) else PluginOutcome.RecognitionRoutingChanged
             }
             "toggle" -> provider().let { PluginOutcome.SetPluginEnabled(it.pluginId, !it.enabled) }
@@ -59,6 +70,7 @@ class RecognitionServicePlugin : KigPlugin {
             else -> PluginOutcome.Message("未知识别服务操作")
         }
     }
+    override suspend fun close() { if (::facade.isInitialized) facade.close() }
     private fun captionSession(context: PluginContext) = context.listeningPanelVisible ||
         (context.listening && !context.voiceInputActive && !context.continuousRecognition)
     private fun start(purpose: RecognitionPurpose, continuous: Boolean = false): PluginOutcome {
