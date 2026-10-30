@@ -1,8 +1,8 @@
 {
   "id": "service.speech-recognition",
   "name": "语音识别服务",
-  "version": "0.8.1",
-  "versionCode": 10,
+  "version": "0.8.2",
+  "versionCode": 11,
   "entryClass": "com.kigtts.engines.recognitionservice.RecognitionServicePlugin",
   "apiVersion": 28,
   "minSdk": 26,
@@ -15,5 +15,12 @@
     "asr-incremental",
     "ui",
     "resources"
-  ]
+  ],
+  "permissionPurposes": {
+    "asr-service": "调用你选择的识别引擎，将聆听字幕和语音输入的录音转为文字。",
+    "asr-batch": "识别你提交的整段录音，并显示文字结果。",
+    "asr-segmented": "分段识别连续聆听的录音，逐句显示字幕。",
+    "asr-incremental": "在你说话时持续识别录音，实时更新字幕。",
+    "resources": "导入和管理你选择的识别包。"
+  }
 }

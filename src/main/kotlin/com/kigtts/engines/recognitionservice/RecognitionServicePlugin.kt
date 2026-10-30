@@ -3,7 +3,7 @@ package com.kigtts.engines.recognitionservice
 import com.kigtts.plugin.api.*
 
 class RecognitionServicePlugin : KigPlugin {
-    override val descriptor = PluginDescriptor("service.speech-recognition", "语音识别服务", "聆听字幕、语音输入与识别包", version = "0.8.1")
+    override val descriptor = PluginDescriptor("service.speech-recognition", "语音识别服务", "聆听字幕、语音输入与识别包", version = "0.8.2")
     private lateinit var settings: RecognitionServiceSettings
     private lateinit var broker: RecognitionBroker
     private lateinit var facade: ServiceRecognition
