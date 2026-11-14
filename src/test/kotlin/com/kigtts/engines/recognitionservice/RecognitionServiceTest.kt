@@ -84,7 +84,7 @@ class RecognitionServiceTest {
         val broker = Broker(); val plugin = plugin(broker); broker.hold = true
         val flow = plugin.asr.recognizeStream(flowOf(PcmAudio(byteArrayOf(1, 0))))
         plugin.execute("select/test.segmented", PluginContext("", ""))
-        withTimeout(2_000) { flow.first { it is RecognitionEvent.Transcript && it.partial.isNotEmpty() } }
+        withTimeout(2_000) { flow.first { it == RecognitionEvent.Started } }
         assertEquals("test.segmented", broker.calls.single()); assertTrue(broker.cancelled)
         broker.hold = false; assertTrue(plugin.asr.recognize(PcmAudio(byteArrayOf(1, 0))).text.startsWith("test.segmented"))
     }
@@ -98,13 +98,20 @@ class RecognitionServiceTest {
         assertEquals(PluginOutcome.SelectRecognitionService("service.speech-recognition"), plugin.execute("activate", PluginContext("", "")))
         assertTrue(File(root, "config/recognition-service.json").isFile); assertFalse(File(root, "models").exists())
     }
-    @Test fun unavailableEnginesBlockInputAndStreamKindIsNeverUpgradedByFacade() = runBlocking<Unit> {
+    @Test fun batchOnlyProviderGetsFinalOnlyAdapterAndSilenceIsNotUploaded() = runBlocking<Unit> {
         val broker = Broker(); broker.catalog = listOf(AsrProvider("test.batch", "完整录音", AsrInfo(streaming = StreamingKind.NONE)))
-        val plugin = plugin(broker); assertEquals(StreamingKind.NONE, plugin.asr.info.streaming)
-        try { plugin.asr.recognizeStream(emptyFlow()).toList(); fail("Invented streaming capability") }
-        catch (expected: EngineException) { assertEquals(EngineError.UNSUPPORTED_FORMAT, expected.code) }
+        val plugin = plugin(broker); assertEquals(StreamingKind.SEGMENTED, plugin.asr.info.streaming)
+        assertEquals(StreamingKind.NONE, broker.catalog.single().info.streaming)
+        val silence = ByteArray(640 * 35)
+        val speech = ByteArray(640 * 15) { if (it % 2 == 1) 10 else 0 }
+        val events = plugin.asr.recognizeStream(flowOf(PcmAudio(silence + speech + silence + speech))).toList()
+        assertEquals(RecognitionEvent.Started, events.first())
+        val sentences = events.drop(1).map { it as RecognitionEvent.Transcript }
+        assertEquals(listOf(1L, 2L), sentences.map { it.sequence })
+        assertTrue(sentences.all { it.partial.isEmpty() && it.finalized!!.startsWith("test.batch") })
+        assertEquals(listOf(RecognitionEvent.Started), plugin.asr.recognizeStream(flowOf(PcmAudio(silence))).toList())
         broker.catalog = emptyList(); assertEquals(EngineAvailability.NEEDS_RESOURCES, plugin.asr.info.availability)
-        assertTrue(broker.calls.isEmpty())
+        assertEquals(listOf("test.batch", "test.batch"), broker.calls)
     }
     @Test fun selectingDisabledProviderRequestsHostEnableWithoutInliningEngine() = runBlocking<Unit> {
         val broker = Broker(); broker.catalog = broker.catalog.map { it.copy(enabled = false) }; val plugin = plugin(broker)
@@ -141,13 +148,13 @@ class RecognitionServiceTest {
         assertTrue(plugin(broker).contributions(context).gestures.isEmpty())
         assertEquals(PluginOutcome.RefreshUi, plugin.execute("input", context))
     }
-    @Test fun outputChoicePersistsAndSessionRejectsUnavailableOrBatchOnlyContinuous() = runBlocking {
+    @Test fun outputChoicePersistsAndBatchProviderSupportsContinuous() = runBlocking {
         val broker = Broker(); val plugin = plugin(broker); val context = PluginContext("", "")
         plugin.execute("output/BOTH", context)
         assertEquals(CaptionOutput.BOTH, (plugin(broker).execute("listen", context) as PluginOutcome.StartRecognition).session.output)
         broker.catalog = listOf(AsrProvider("test.batch", "录音", AsrInfo(streaming = StreamingKind.NONE)))
-        assertTrue(plugin.execute("listen", context) is PluginOutcome.Message)
-        assertTrue(plugin.execute("continuous", context) is PluginOutcome.Message)
+        assertTrue(plugin.execute("listen", context) is PluginOutcome.StartRecognition)
+        assertTrue(plugin.execute("continuous", context) is PluginOutcome.StartRecognition)
         assertTrue(plugin.execute("input", context) is PluginOutcome.StartRecognition)
         broker.catalog = emptyList()
         assertTrue(plugin.execute("input", context) is PluginOutcome.Message)

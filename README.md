@@ -2,6 +2,12 @@
 
 KIGTTS的语音识别服务独立仓库。本仓库采用 **MIT**，完整文本见[LICENSE](LICENSE)，来源与第三方许可见[NOTICE.md](NOTICE.md)。SDK的许可不会覆盖插件的许可。
 
+## 接入识别引擎
+
+- `AsrInfo.streaming` 未填写时，默认 `INCREMENTAL`，保留实时中间结果；引擎需声明相应的包能力和权限。
+- 自行实现句尾切分、每句返回最终结果的引擎声明 `SEGMENTED`。
+- 只接收整段音频的引擎声明 `NONE` 和 `batch = true`。语音识别服务在遇到停顿、达到时长上限或正常提交时切出一段，在录音继续时依序调用引擎的 `recognize`，只提交最终文字。无需在引擎里模拟 `recognizeStream`。
+
 ## 构建
 
 需要JDK17、Android SDK36、PowerShell7。克隆时获取已固定版本的SDK及共享组件，不需要克隆主程序。

@@ -34,5 +34,5 @@ internal fun recognitionServicePage(id: String, settings: RecognitionServiceSett
 internal fun recognitionKind(kind: StreamingKind) = when (kind) {
     StreamingKind.INCREMENTAL -> "边说边识别"
     StreamingKind.SEGMENTED -> "分段识别"
-    StreamingKind.NONE -> "录音识别"
+    StreamingKind.NONE -> "断句后识别"
 }

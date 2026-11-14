@@ -25,13 +25,15 @@ internal class ServiceRecognition(private val settings: RecognitionServiceSettin
         { settings.resident }, { settings.idleSeconds })
     suspend fun settingsChanged() = residency.changed()
     override suspend fun close() { changes.cancel(); residency.close() }
-    override val info get() = settings.current(broker.providers())?.info?.copy(role = AsrRole.SERVICE)
+    override val info get() = settings.current(broker.providers())?.info?.let {
+        it.copy(role = AsrRole.SERVICE, streaming = if (it.streaming == StreamingKind.NONE && it.batch) StreamingKind.SEGMENTED else it.streaming)
+    }
         ?: AsrInfo(streaming = StreamingKind.NONE, availability = EngineAvailability.NEEDS_RESOURCES, role = AsrRole.SERVICE)
     private fun provider(streaming: Boolean): AsrProvider {
         val selected = settings.current(broker.providers())
             ?: throw EngineException(EngineError.NOT_CONFIGURED, "请在语音识别服务中选用并启用一个识别引擎")
         if (selected.info.availability != EngineAvailability.READY) throw EngineException(EngineError.NOT_CONFIGURED, "当前识别引擎需要先配置模型")
-        if (streaming && selected.info.streaming == StreamingKind.NONE || !streaming && !selected.info.batch)
+        if (!streaming && !selected.info.batch)
             throw EngineException(EngineError.UNSUPPORTED_FORMAT, "当前引擎不支持此识别方式")
         return selected
     }
@@ -44,15 +46,21 @@ internal class ServiceRecognition(private val settings: RecognitionServiceSettin
         val selected = provider(true)
         residency.begin(selected.pluginId)
         try {
-        val transcript = TranscriptAssembler(config.maxDisplayCharacters)
-        broker.recognizeStream(selected.pluginId, audio, config).collect { event ->
-            when (event) {
-                RecognitionEvent.Started -> emit(event)
-                is RecognitionEvent.Partial -> emit(transcript.partial(event.text))
-                is RecognitionEvent.Final -> transcript.finalize(event.result.text)?.let { emit(it) }
-                is RecognitionEvent.Transcript -> error("识别引擎不能代替服务拼接字幕")
+            val transcript = TranscriptAssembler(config.maxDisplayCharacters)
+            if (selected.info.streaming == StreamingKind.NONE) {
+                emit(RecognitionEvent.Started)
+                batchSpeechSegments(audio, selected.info.inputFormat, selected.info.maxBatchSeconds).collect { segment ->
+                    val result = broker.recognize(selected.pluginId, segment, config)
+                    if (!result.placeholder) transcript.finalize(result.text)?.let { emit(it) }
+                }
+            } else broker.recognizeStream(selected.pluginId, audio, config).collect { event ->
+                when (event) {
+                    RecognitionEvent.Started -> emit(event)
+                    is RecognitionEvent.Partial -> if (selected.info.streaming == StreamingKind.INCREMENTAL) emit(transcript.partial(event.text))
+                    is RecognitionEvent.Final -> transcript.finalize(event.result.text)?.let { emit(it) }
+                    is RecognitionEvent.Transcript -> error("识别引擎不能代替服务拼接字幕")
+                }
             }
-        }
         } finally { residency.end() }
     }
 }
