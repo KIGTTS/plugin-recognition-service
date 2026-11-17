@@ -1,5 +1,7 @@
 # 语音识别服务
 
+KIGTTSNEXT 新版已将语音识别服务并入主程序。这个仓库保留旧版服务的源码和构建方法；新版应更新主程序，只需独立安装需要的识别引擎。见 [主程序语音识别说明](https://github.com/KIGTTS/KIGTTSNEXT/blob/main/docs/recognition-service.md)。
+
 KIGTTS的语音识别服务独立仓库。本仓库采用 **MIT**，完整文本见[LICENSE](LICENSE)，来源与第三方许可见[NOTICE.md](NOTICE.md)。SDK的许可不会覆盖插件的许可。
 
 ## 接入识别引擎
